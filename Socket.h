@@ -18,7 +18,7 @@ private:
     int socket_d;
     int socketBufferSize;
 public:
-    Socket(int port_number, int bufferSize = 4196){
+    Socket(int port_number, int bufferSize = 64000){
         socketBufferSize = bufferSize;
         socket_d = socket(PF_INET, SOCK_STREAM, 0);
 
@@ -49,17 +49,28 @@ public:
         }
     }
 
+
+
     void send_message(int connect_descriptior, char* message){
 
         if(send(connect_descriptior, message, strlen(message), 0) == -1){
             throw exception();
         }
+
+    }
+
+    void send_message(int connect_descriptior, void * message, int bufSize){
+
+        if(send(connect_descriptior, message, bufSize, 0) == -1){
+            throw exception();
+        }
+
     }
 
     char* receiveMessage(int connect_descriptor, char* inputBuffer){
 
         char* buffer = new char[1024];
-        if(recv(connect_descriptor, buffer, 1024, 0) < 0){
+        if(recv(connect_descriptor, buffer, 1024, 0) <= 0){
             cout<<errno;
             throw exception();
         }

@@ -5,7 +5,7 @@ int main() {
     Server *server;
 
 
-    server = new Server(30047);
+    server = new Server(30049);
 
     server->start();
 

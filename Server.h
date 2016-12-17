@@ -8,11 +8,15 @@
 #include <cstring>
 #include <zconf.h>
 #include <fstream>
-#include <stdlib.h>
+#include <stdio.h>
 #include "Socket.h"
+#include <string.h>
+#include <stdlib.h>
+#include <malloc.h>
 
 #ifndef LABA1_SERVER_H
 #define LABA1_SERVER_H
+#define BUFFER_SIZE 4096
 
 using namespace std;
 
@@ -23,10 +27,15 @@ private:
 
 
     Socket *sock;
+    void *buffer = malloc(BUFFER_SIZE);
 
 public:
     Server(int port_number) {
         sock = new Socket(port_number);
+    }
+
+    ~Server(){
+        free(buffer);
     }
 
     void start() {
@@ -43,44 +52,20 @@ public:
 
 private:
 
-    void upload(int connection_d, char* fileName){
-        fd_set rfDs;
-        struct timeval tv;
-        FD_ZERO(&rfDs);
-        FD_SET(connection_d, &rfDs);
 
-        tv.tv_sec = 5;
-        tv.tv_usec = 0;
+    void processClient(int connect_d) {
+        char* message = new char[BUFFER_SIZE];
 
-        char *buffer = new char[1024];
-        string fullPath("/home/vladislav/Универ/SPOLKS_LABS/uploads/");
-
-        fstream file(fullPath+=fileName, ios::out);
-
-        while (true) {
-           int result = select(connection_d+1, &rfDs, &rfDs, NULL, &tv);//Допилить функцию
-            if(result == 0){
-                cout<<"wef";
+        while (1) {
+            char *message;
+            try{
+                message = sock->receiveMessage(connect_d, message);
             }
-           char *buffer = sock->receiveMessage(connection_d, buffer);
-
-            if(!strcmp(buffer, "file_end\r\n") || !strcmp(buffer, "file_end")){
+            catch (exception ex){
+                close(connect_d);
                 break;
             }
 
-            file << buffer;
-        }
-
-        file.close();
-        delete buffer;
-
-    }
-
-    void processClient(int connect_d) {
-        char* message = new char[1029];
-
-        while (1) {
-            char *message = sock->receiveMessage(connect_d, message);
             char temp[1024];
             setNullTerminator(message);
             strcpy(temp, message);
@@ -92,10 +77,21 @@ private:
                 sock->send_message(connect_d, "Unknown command\r\n\0");
 
             } else if (!strcmp(command, "download")) {
-                downloadFile(connect_d, strtok(NULL, " "));
-            } else if(!strcmp(command, "upload")) {
-                char* fileName = strtok(NULL, " ");
-                upload(connect_d, fileName);
+                try {
+                    char* fileName = strtok(NULL, " ");
+                    char* bytesCountStr = strtok(NULL, " ");
+                    long bytesSaved;
+                    if(bytesCountStr == NULL) {
+                        bytesSaved = 0;
+                    } else{
+                        bytesSaved = atol(bytesCountStr);
+                    }
+                    downloadFile(connect_d, fileName, bytesSaved);
+                }
+                catch (exception ex){
+                    close(connect_d);
+                    break;
+                }
             }else
              {
 
@@ -116,7 +112,6 @@ private:
 
 
     char* processCommand(char* input){
-        //setNullTerminator(input);
 
         if(strlen(input)==0){
             return input;
@@ -154,23 +149,42 @@ private:
         return asctime (timeinfo);
     }
 
-    void downloadFile(int connect_d, char* fileName){
-        ifstream file (fileName, ios::out | ios::binary);
-        char buffer[4196];
+    void downloadFile(int connect_d, char* fileName, long loadedSize){
+        FILE *file = fopen(fileName, "rb");
 
-        if(!file.is_open()){
-            cout<<"File not found"<<endl;
+        char buf2[BUFFER_SIZE];
+
+        if(file == NULL){
+            sock->send_message(connect_d, "-1");
             throw exception();
         }
 
-        while(!file.eof()){
-            file.read(buffer, 4196);
+        fseek(file, 0, SEEK_END);
 
-            sock->send_message(connect_d, buffer);
+        long fileSize = ftell(file);
+
+        fseek(file, loadedSize, SEEK_SET);
+
+        sprintf(buf2, "%ld", fileSize);
+
+        sock->send_message(connect_d, buf2);
+
+        while(!feof(file)){
+
+            fread(buffer, BUFFER_SIZE, sizeof(char), file);
+
+            try {
+                sock->send_message(connect_d, buffer, BUFFER_SIZE);
+
+            }
+
+            catch (exception ex){
+                fclose(file);
+                throw exception();
+            }
+
         }
-
-        sock->send_message(connect_d, "file_end");
-        file.close();
+        fclose(file);
     }
 
     int waitClientConnecting(){
